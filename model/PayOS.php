@@ -101,6 +101,55 @@ class PayOS
         return $response['data'];
     }
 
+    public function getPaymentLinkInformation($orderCode)
+    {
+        $this->ensureConfigured();
+
+        $orderCode = filter_var($orderCode, FILTER_VALIDATE_INT);
+        if ($orderCode === false || $orderCode < 1) {
+            throw new InvalidArgumentException('Mã giao dịch PayOS không hợp lệ.');
+        }
+
+        $curl = curl_init(
+            'https://api-merchant.payos.vn/v2/payment-requests/' . rawurlencode((string) $orderCode)
+        );
+        curl_setopt_array($curl, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'x-client-id: ' . PAYOS_CLIENT_ID,
+                'x-api-key: ' . PAYOS_API_KEY,
+            ],
+        ]);
+
+        $responseBody = curl_exec($curl);
+        $httpStatus = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($curl);
+        curl_close($curl);
+
+        if ($responseBody === false) {
+            throw new RuntimeException('Không thể kiểm tra giao dịch PayOS: ' . $curlError);
+        }
+
+        $response = json_decode($responseBody, true);
+        if (
+            $httpStatus < 200 ||
+            $httpStatus >= 300 ||
+            !is_array($response) ||
+            (string) ($response['code'] ?? '') !== '00' ||
+            !is_array($response['data'] ?? null)
+        ) {
+            $message = is_array($response)
+                ? ($response['desc'] ?? 'PayOS không trả về thông tin giao dịch hợp lệ.')
+                : 'Phản hồi PayOS không hợp lệ.';
+            throw new RuntimeException((string) $message);
+        }
+
+        return $response['data'];
+    }
+
     public static function verifyWebhookSignature(array $data, $signature)
     {
         if (PAYOS_CHECKSUM_KEY === '' || !is_string($signature) || $signature === '') {
@@ -113,9 +162,13 @@ class PayOS
         foreach ($keys as $key) {
             $value = $data[$key];
             if (is_array($value)) {
-                $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            } elseif ($value === null) {
-                $value = 'null';
+                $keys = array_keys($value);
+                $isAssociative = $keys !== [] && $keys !== range(0, count($keys) - 1);
+                $value = $isAssociative
+                    ? '[object Object]'
+                    : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            } elseif ($value === null || $value === 'null' || $value === 'undefined') {
+                $value = '';
             } elseif (is_bool($value)) {
                 $value = $value ? 'true' : 'false';
             }

@@ -407,11 +407,7 @@ class OrderController{
     public function payosReturn()
     {
         $orderId = filter_var($_GET['order_id'] ?? null, FILTER_VALIDATE_INT);
-        if (
-            $orderId === false ||
-            $orderId < 1 ||
-            (int) ($_SESSION['payos_order_id'] ?? 0) !== $orderId
-        ) {
+        if ($orderId === false || $orderId < 1) {
             http_response_code(400);
             $error = 'Không tìm thấy đơn hàng thanh toán.';
             require "view/payment_error.php";
@@ -428,6 +424,32 @@ class OrderController{
             $error = 'Không tìm thấy thông tin thanh toán PayOS.';
             require "view/payment_error.php";
             return;
+        }
+
+        if ($payment['payment_status'] !== 'paid') {
+            try {
+                $orderCode = (int) ($payment['payos_order_code'] ?? 0);
+                if ($orderCode < 1) {
+                    $orderCode = $orderId;
+                }
+
+                $gatewayPayment = (new PayOS())->getPaymentLinkInformation($orderCode);
+                $gatewayOrderCode = filter_var($gatewayPayment['orderCode'] ?? null, FILTER_VALIDATE_INT);
+                $gatewayAmount = filter_var($gatewayPayment['amount'] ?? null, FILTER_VALIDATE_INT);
+                if (
+                    strtoupper((string) ($gatewayPayment['status'] ?? '')) === 'PAID' &&
+                    $gatewayOrderCode !== false &&
+                    $gatewayOrderCode === $orderCode &&
+                    $gatewayAmount !== false &&
+                    $gatewayAmount === (int) round((float) $payment['total_amount'])
+                ) {
+                    $transactionCode = (string) ($gatewayPayment['transactions'][0]['reference'] ?? $gatewayPayment['paymentLinkId'] ?? '');
+                    $paymentModel->markPayOSOrderPaid($orderCode, $gatewayAmount, $transactionCode);
+                    $payment = $paymentModel->getByOrderId($orderId);
+                }
+            } catch (Throwable $exception) {
+                error_log('PayOS return status check failed for order ' . $orderId . ': ' . $exception->getMessage());
+            }
         }
 
         if ($payment['payment_status'] === 'paid') {
