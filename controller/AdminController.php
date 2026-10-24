@@ -488,13 +488,24 @@ public function statistics(){
         : $startDate->modify($periodType === 'day' ? '+1 day' : ($periodType === 'month' ? '+1 month' : ($periodType === 'quarter' ? '+3 months' : '+1 year')));
     $startDateValue = $startDate->format('Y-m-d 00:00:00');
     $endDateValue = $endDate->format('Y-m-d 00:00:00');
+    $salesDate = "COALESCE(
+        (SELECT pay.paid_at
+         FROM payments pay
+         WHERE pay.order_id = o.order_id AND pay.payment_status = 'paid'
+         ORDER BY pay.payment_id DESC
+         LIMIT 1),
+        o.created_at
+    )";
+
+    $periodExpression = str_replace('o.created_at', $salesDate, $periodExpression);
+    $groupBy = str_replace('o.created_at', $salesDate, $groupBy);
 
     $itemTotals = "
         SELECT order_id, SUM(quantity) AS quantity_sold
         FROM order_items
         GROUP BY order_id
     ";
-    $dateCondition = "o.status <> 'cancelled' AND o.created_at >= ? AND o.created_at < ?";
+    $dateCondition = "o.status <> 'cancelled' AND $salesDate >= ? AND $salesDate < ?";
 
     $sql = "
         SELECT

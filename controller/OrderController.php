@@ -195,7 +195,8 @@ class OrderController{
     if($payment_method === "payos"){
         try {
             $payOS = new PayOS();
-            $paymentLink = $payOS->createPaymentLink($order_id, $total);
+        $orderCode = $paymentModel->allocatePayOSOrderCode($order_id);
+        $paymentLink = $payOS->createPaymentLink($order_id, $total, $orderCode);
             $_SESSION['payos_order_id'] = $order_id;
             header('Location: ' . $paymentLink['checkoutUrl']);
             exit;
@@ -419,7 +420,10 @@ class OrderController{
 
         $paymentModel = new Payment();
         $payment = $paymentModel->getByOrderId($orderId);
-        if (!$payment || $payment['payment_method'] !== 'payos') {
+        if (
+            !$payment ||
+            !in_array($payment['payment_method'], ['payos', ''], true)
+        ) {
             http_response_code(404);
             $error = 'Không tìm thấy thông tin thanh toán PayOS.';
             require "view/payment_error.php";
@@ -461,7 +465,9 @@ class OrderController{
         }
 
         try {
-            $paymentLink = (new PayOS())->createPaymentLink($orderId, $order['total_amount']);
+            $paymentModel = new Payment();
+            $orderCode = $paymentModel->allocatePayOSOrderCode($orderId);
+            $paymentLink = (new PayOS())->createPaymentLink($orderId, $order['total_amount'], $orderCode);
             $_SESSION['payos_order_id'] = $orderId;
             header('Location: ' . $paymentLink['checkoutUrl']);
             exit;

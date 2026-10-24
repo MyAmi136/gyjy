@@ -20,7 +20,7 @@ class PayOS
         }
     }
 
-    public function createPaymentLink($orderId, $amount)
+    public function createPaymentLink($orderId, $amount, $orderCode = null)
     {
         $this->ensureConfigured();
 
@@ -29,8 +29,12 @@ class PayOS
             throw new InvalidArgumentException('Mã đơn hàng hoặc số tiền không hợp lệ.');
         }
 
-        $orderCode = (int) $orderId;
-        $description = 'Thanh toan don ' . $orderCode;
+        $orderCode = $orderCode === null ? (int) $orderId : (int) $orderCode;
+        if ($orderCode < 1) {
+            throw new InvalidArgumentException('Mã giao dịch PayOS không hợp lệ.');
+        }
+
+        $description = 'Thanh toan don #' . (int) $orderId;
         if (strlen($description) > 25) {
             throw new InvalidArgumentException('Mã đơn hàng vượt quá giới hạn của PayOS.');
         }
