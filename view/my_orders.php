@@ -3,6 +3,7 @@
 <?php
 $statusLabels = [
     'pending' => ['Chờ xác nhận', 'bg-warning text-dark'],
+    'paid' => ['Đã thanh toán', 'bg-success'],
     'processing' => ['Đang xử lý', 'bg-info text-dark'],
     'shipping' => ['Đang giao hàng', 'bg-primary'],
     'completed' => ['Hoàn thành', 'bg-success'],

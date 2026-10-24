@@ -144,6 +144,17 @@ $total+=$subtotal;
 </label>
 </div>
 
+<div class="form-check mb-4">
+<input class="form-check-input" type="radio"
+       name="payment_method"
+       value="payos"
+       id="payment_payos">
+<label class="form-check-label" for="payment_payos">
+  <strong>Chuyển khoản ngân hàng bằng mã QR</strong>
+  <div class="text-muted small">Quét mã QR PayOS; đơn hàng tự xác nhận khi ngân hàng báo giao dịch thành công</div>
+</label>
+</div>
+
 <button class="btn btn-danger btn-lg w-100 py-2">
 <i class="bi bi-check-circle"></i> Đặt hàng ngay
 </button>

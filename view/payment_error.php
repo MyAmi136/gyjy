@@ -22,9 +22,15 @@
     <?php endif; ?>
 
     <div class="mt-4">
-        <a href="index.php?page=checkout" class="btn btn-warning btn-lg">
-            <i class="bi bi-arrow-left"></i> Thử lại thanh toán
-        </a>
+        <?php if (!empty($retryPayOS) && !empty($order_id)): ?>
+            <a href="index.php?page=payos-retry&amp;order_id=<?= (int) $order_id ?>" class="btn btn-warning btn-lg">
+                <i class="bi bi-arrow-clockwise"></i> Thử tạo lại giao dịch
+            </a>
+        <?php else: ?>
+            <a href="index.php?page=checkout" class="btn btn-warning btn-lg">
+                <i class="bi bi-arrow-left"></i> Thử lại thanh toán
+            </a>
+        <?php endif; ?>
         
         <a href="index.php" class="btn btn-secondary btn-lg ms-2">
             <i class="bi bi-house"></i> Quay về trang chủ

@@ -11,6 +11,7 @@
     <?php
     $statusLabels = [
         'pending' => ['Chờ xác nhận', 'bg-warning text-dark'],
+        'paid' => ['Đã thanh toán', 'bg-success'],
         'processing' => ['Đang xử lý', 'bg-info text-dark'],
         'shipping' => ['Đang giao hàng', 'bg-primary'],
         'completed' => ['Hoàn thành', 'bg-success'],
@@ -97,6 +98,11 @@
                         <span class="badge <?= $paymentStatus[1] ?>">
                             <?= htmlspecialchars($paymentStatus[0], ENT_QUOTES, 'UTF-8') ?>
                         </span>
+                        <?php if (($order['payment_method'] ?? '') === 'payos' && ($order['payment_status'] ?? '') !== 'paid'): ?>
+                            <a href="index.php?page=payos-retry&amp;order_id=<?= (int) $order['order_id'] ?>" class="btn btn-outline-primary btn-sm d-block mt-3">
+                                Thanh toán bằng QR
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>

@@ -1,108 +1,52 @@
 <?php
+require_once dirname(__DIR__) . '/model/PayOS.php';
+require_once dirname(__DIR__) . '/model/Payment.php';
 
-/**
- * ============================================================================
- * PAYOS WEBHOOK HANDLER
- * ============================================================================
- *
- * Endpoint để PayOS gửi thông báo thanh toán
- * URL: https://yoursite.com/webhook/payos.php
- *
- * ============================================================================
- */
+header('Content-Type: application/json; charset=utf-8');
 
-if (file_exists(dirname(__DIR__) . '/config/payos.php')) {
-    require_once dirname(__DIR__) . '/config/payos.php';
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['error' => 'Method not allowed']);
+    exit;
 }
 
-require_once dirname(__DIR__) . '/model/Order.php';
-
-function getPayOSWebhookData($data)
-{
-    if (!is_array($data)) {
-        return [];
-    }
-
-    if (isset($data['data']) && is_array($data['data'])) {
-        return $data['data'];
-    }
-
-    return $data;
+$requestBody = file_get_contents('php://input');
+$webhook = is_string($requestBody) ? json_decode($requestBody, true) : null;
+if (!is_array($webhook) || !is_array($webhook['data'] ?? null)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Invalid webhook payload']);
+    exit;
 }
 
-function buildPayOSSignatureData($data)
-{
-    $payload = getPayOSWebhookData($data);
-    $fields = ['orderCode', 'amount', 'description', 'accountNumber', 'referenceCode', 'transactionDateTime'];
-    $parts = [];
-
-    foreach ($fields as $field) {
-        if (array_key_exists($field, $payload) && $payload[$field] !== null && $payload[$field] !== '') {
-            $parts[] = (string) $payload[$field];
-        }
-    }
-
-    return implode('|', $parts);
+$data = $webhook['data'];
+if (!PayOS::verifyWebhookSignature($data, $webhook['signature'] ?? '')) {
+    error_log('PayOS webhook rejected: invalid signature');
+    http_response_code(401);
+    echo json_encode(['error' => 'Invalid signature']);
+    exit;
 }
 
-// 🔐 Verify webhook signature
-function verifyPayOSSignature($data, $signature)
-{
-    if (!defined('PAYOS_CHECKSUM_KEY') || PAYOS_CHECKSUM_KEY === '' || PAYOS_CHECKSUM_KEY === 'YOUR_CHECKSUM_KEY') {
-        return false;
-    }
-
-    $signature = trim((string) $signature);
-    if ($signature === '') {
-        return false;
-    }
-
-    $expectedSignature = hash_hmac('sha256', buildPayOSSignatureData($data), PAYOS_CHECKSUM_KEY);
-    return hash_equals($expectedSignature, $signature);
-}
-
-// ✅ Process webhook
-try {
-    $payload = file_get_contents('php://input');
-    if ($payload === false || trim($payload) === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Empty payload']);
-        exit;
-    }
-
-    $data = json_decode($payload, true);
-    if (!is_array($data)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Invalid JSON payload']);
-        exit;
-    }
-
-    $normalizedData = getPayOSWebhookData($data);
-
-    error_log('PayOS Webhook Received: ' . json_encode($data));
-
-    $signature = $_SERVER['HTTP_X_PAYOS_SIGNATURE'] ?? $_SERVER['HTTP_X_SIGNATURE'] ?? '';
-
-    if (!verifyPayOSSignature($normalizedData, $signature)) {
-        error_log('PayOS Webhook Signature Invalid!');
-        http_response_code(401);
-        echo json_encode(['error' => 'Invalid signature']);
-        exit;
-    }
-
-    $orderCode = $normalizedData['orderCode'] ?? '';
-    $orderModel = new Order();
-
-    error_log('PayOS payment processed: ' . $orderCode);
-
+if (($webhook['success'] ?? false) !== true || (string) ($webhook['code'] ?? '') !== '00') {
     http_response_code(200);
-    echo json_encode([
-        'code' => 'OK',
-        'message' => 'Received'
-    ]);
-} catch (Exception $e) {
-    error_log('PayOS Webhook Error: ' . $e->getMessage());
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['code' => 'OK', 'message' => 'Payment not completed']);
+    exit;
 }
 
+$orderId = filter_var($data['orderCode'] ?? null, FILTER_VALIDATE_INT);
+$amount = filter_var($data['amount'] ?? null, FILTER_VALIDATE_INT);
+if ($orderId === false || $orderId < 1 || $amount === false || $amount < 1) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Invalid order or amount']);
+    exit;
+}
+
+try {
+    $transactionCode = (string) ($data['reference'] ?? $data['paymentLinkId'] ?? '');
+    (new Payment())->markPayOSOrderPaid($orderId, $amount, $transactionCode);
+    http_response_code(200);
+    echo json_encode(['code' => 'OK', 'message' => 'Payment recorded']);
+} catch (Throwable $exception) {
+    error_log('PayOS webhook processing failed: ' . $exception->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Unable to process payment']);
+}

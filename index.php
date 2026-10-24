@@ -167,6 +167,14 @@ case "vnpay_return":
 require_once "controller/OrderController.php";
 (new OrderController())->vnpayReturn();
 break;
+case "payos-return":
+require_once "controller/OrderController.php";
+(new OrderController())->payosReturn();
+break;
+case "payos-retry":
+require_once "controller/OrderController.php";
+(new OrderController())->retryPayOS();
+break;
 /* ======================================================
    ADMIN DASHBOARD
 ====================================================== */

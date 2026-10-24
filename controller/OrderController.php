@@ -4,6 +4,7 @@ require_once "model/Order.php";
 require_once "model/OrderItem.php";
 require_once "model/Payment.php";
 require_once "model/Product.php";
+require_once "model/PayOS.php";
 
 class OrderController{
 
@@ -105,7 +106,7 @@ class OrderController{
     }
 
     $payment_method = isset($_POST['payment_method']) ? $_POST['payment_method'] : 'cod';
-    if(!in_array($payment_method, ['cod', 'mock', 'vnpay'], true)){
+    if(!in_array($payment_method, ['cod', 'mock', 'vnpay', 'payos'], true)){
         $_SESSION['error'] = "Phương thức thanh toán không hợp lệ.";
         header("Location:index.php?page=checkout");
         exit;
@@ -189,6 +190,22 @@ class OrderController{
         $_SESSION['vnpay_order_id'] = $order_id;
         $this->vnpay($total, $order_id);
         return;
+    }
+
+    if($payment_method === "payos"){
+        try {
+            $payOS = new PayOS();
+            $paymentLink = $payOS->createPaymentLink($order_id, $total);
+            $_SESSION['payos_order_id'] = $order_id;
+            header('Location: ' . $paymentLink['checkoutUrl']);
+            exit;
+        } catch (Throwable $exception) {
+            error_log('PayOS payment link creation failed for order ' . $order_id . ': ' . $exception->getMessage());
+            $error = 'Chưa thể tạo giao dịch PayOS. Đơn hàng của bạn vẫn được lưu; vui lòng kiểm tra cấu hình thanh toán hoặc liên hệ cửa hàng.';
+            $retryPayOS = true;
+            require "view/payment_error.php";
+            return;
+        }
     }
 
     // ✅ COD - Decrease stock immediately (assume reserved on order placement)
@@ -384,6 +401,77 @@ class OrderController{
             . "). Hãy thử đặt hàng và thanh toán lại.";
         error_log("VNPAY payment failed for order " . $orderId . " with response code " . $responseCode);
         require "view/payment_error.php";
+    }
+
+    public function payosReturn()
+    {
+        $orderId = filter_var($_GET['order_id'] ?? null, FILTER_VALIDATE_INT);
+        if (
+            $orderId === false ||
+            $orderId < 1 ||
+            (int) ($_SESSION['payos_order_id'] ?? 0) !== $orderId
+        ) {
+            http_response_code(400);
+            $error = 'Không tìm thấy đơn hàng thanh toán.';
+            require "view/payment_error.php";
+            return;
+        }
+
+        $paymentModel = new Payment();
+        $payment = $paymentModel->getByOrderId($orderId);
+        if (!$payment || $payment['payment_method'] !== 'payos') {
+            http_response_code(404);
+            $error = 'Không tìm thấy thông tin thanh toán PayOS.';
+            require "view/payment_error.php";
+            return;
+        }
+
+        if ($payment['payment_status'] === 'paid') {
+            unset($_SESSION['cart'], $_SESSION['payos_order_id']);
+        }
+
+        $_SESSION['last_order_id'] = $orderId;
+        require "view/payos_return.php";
+    }
+
+    public function retryPayOS()
+    {
+        if (!isset($_SESSION['user']['user_id'])) {
+            header("Location:index.php?page=login&redirect=my_orders");
+            exit;
+        }
+
+        $orderId = filter_var($_GET['order_id'] ?? null, FILTER_VALIDATE_INT);
+        if ($orderId === false || $orderId < 1) {
+            http_response_code(404);
+            echo "Không tìm thấy đơn hàng.";
+            return;
+        }
+
+        $order = (new Order())->getCustomerOrder($orderId, $_SESSION['user']['user_id']);
+        if (
+            !$order ||
+            $order['payment_method'] !== 'payos' ||
+            $order['payment_status'] === 'paid' ||
+            $order['status'] === 'cancelled'
+        ) {
+            http_response_code(404);
+            echo "Đơn hàng không thể thanh toán lại.";
+            return;
+        }
+
+        try {
+            $paymentLink = (new PayOS())->createPaymentLink($orderId, $order['total_amount']);
+            $_SESSION['payos_order_id'] = $orderId;
+            header('Location: ' . $paymentLink['checkoutUrl']);
+            exit;
+        } catch (Throwable $exception) {
+            error_log('PayOS retry failed for order ' . $orderId . ': ' . $exception->getMessage());
+            $error = 'Chưa thể tạo giao dịch PayOS. Vui lòng thử lại sau.';
+            $retryPayOS = true;
+            $order_id = $orderId;
+            require "view/payment_error.php";
+        }
     }
 
     // =========================
